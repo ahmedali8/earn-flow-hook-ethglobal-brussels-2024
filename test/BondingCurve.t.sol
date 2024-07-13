@@ -117,6 +117,7 @@ contract BondingCurveTest is Test {
 
         uint256 beneficiaryBalBefore = address(beneficiary).balance;
         uint256 reserveBalBefore = bondingCurve.reserveBalance();
+        uint256 bondingCurveBalBefore = address(bondingCurve).balance;
 
         // buyer buys
         vm.prank({msgSender: buyer});
@@ -133,6 +134,9 @@ contract BondingCurveTest is Test {
         assertEq(bondedToken.balanceOf(buyer), numTokens);
 
         uint256 reserveBalAfter = bondingCurve.reserveBalance();
+        uint256 bondingCurveBalAfter = address(bondingCurve).balance;
+
         assertEq(reserveBalAfter - reserveBalBefore, expectedToReserve);
+        assertEq(bondingCurveBalAfter - bondingCurveBalBefore, expectedToReserve);
     }
 }
