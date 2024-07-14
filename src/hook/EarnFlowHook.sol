@@ -31,6 +31,10 @@ contract EarnFlowHook is BaseHook, BondingCurve {
     IPoolManager immutable manager;
 
     uint256 public hookFee = 100e18; // 0.01%
+    bool public oneToOne = false;
+    bool public hatchingEnabled = false;
+
+    error HatchingEnabled();
 
     constructor(
         IPoolManager _manager,
@@ -60,15 +64,42 @@ contract EarnFlowHook is BaseHook, BondingCurve {
             afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
-            beforeSwap: false,
+            beforeSwap: true, // Override how swaps are done
             afterSwap: true, // Override how swaps are done
             beforeDonate: false,
             afterDonate: false,
-            beforeSwapReturnDelta: false,
+            beforeSwapReturnDelta: true, // Allow beforeSwap to return a custom delta
             afterSwapReturnDelta: true, // Allow afterSwap to return a custom delta
             afterAddLiquidityReturnDelta: false,
             afterRemoveLiquidityReturnDelta: false
         });
+    }
+
+    function beforeSwap(
+        address, /* sender **/
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        bytes calldata /* hookData **/
+    ) external override onlyPoolManager returns (bytes4, BeforeSwapDelta, uint24) {
+        if (hatchingEnabled && !params.zeroForOne) {
+            revert HatchingEnabled();
+        }
+
+        if (!oneToOne) {
+            return (IHooks.beforeSwap.selector, toBeforeSwapDelta(0, 0), 0);
+        }
+
+        (Currency inputCurrency, Currency outputCurrency, uint256 amount) = _getInputOutputAndAmount(key, params);
+
+        // this "custom curve" is a line, 1-1
+        // take the full input amount, and give the full output amount
+        manager.take(inputCurrency, address(this), amount);
+
+        outputCurrency.settle(manager, address(this), amount, false);
+
+        // return -amountSpecified as specified to no-op the concentrated liquidity swap
+        BeforeSwapDelta hookDelta = toBeforeSwapDelta(int128(-params.amountSpecified), int128(params.amountSpecified));
+        return (IHooks.beforeSwap.selector, hookDelta, 0);
     }
 
     function afterSwap(
@@ -92,6 +123,16 @@ contract EarnFlowHook is BaseHook, BondingCurve {
         manager.take(currencyUnspecified, address(this), feeAmount);
 
         return (BaseHook.afterSwap.selector, feeAmount.toInt128());
+    }
+
+    function _getInputOutputAndAmount(PoolKey calldata key, IPoolManager.SwapParams calldata params)
+        internal
+        pure
+        returns (Currency input, Currency output, uint256 amount)
+    {
+        (input, output) = params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+
+        amount = params.amountSpecified < 0 ? uint256(-params.amountSpecified) : uint256(params.amountSpecified);
     }
 
     function setHookFee(uint256 fee) external onlyOwner {

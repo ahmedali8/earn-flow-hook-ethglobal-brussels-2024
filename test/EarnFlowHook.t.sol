@@ -90,7 +90,8 @@ contract EarnFlowHookTest is Test, Deployers {
 
         // Deploy the hook to an address with the correct flags
         address flags = address(
-            uint160(Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
+            uint160(Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG) | Hooks.BEFORE_SWAP_FLAG
+                | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
         deployCodeTo(
             "EarnFlowHook.sol:EarnFlowHook",
@@ -253,7 +254,7 @@ contract EarnFlowHookTest is Test, Deployers {
         // Perform a test swap //
         bool zeroForOne = true;
         int256 amountSpecified = -0.5e18; // negative number indicates exact input swap!
-        BalanceDelta swapDelta = Deployers.swapNativeInput({
+        Deployers.swapNativeInput({
             _key: key,
             zeroForOne: zeroForOne,
             amountSpecified: amountSpecified,
