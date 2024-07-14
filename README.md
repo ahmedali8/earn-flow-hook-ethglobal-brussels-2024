@@ -1,127 +1,81 @@
-# v4-template
-### **A template for writing Uniswap v4 Hooks 🦄**
+# EarnFlow
 
-[`Use this Template`](https://github.com/uniswapfoundation/v4-template/generate)
+EarnFlow is an innovative investment and fundraising platform designed to provide a safer and more profitable investment environment for individuals and organizations. The platform addresses the common pitfalls in project investments, such as the risk of complete financial loss, lack of passive income, and vulnerability to economic attacks like rug pulls. EarnFlow leverages advanced DeFi technologies, specifically Uniswap V4's EarnFlowHook and a future DAO (Decentralized Autonomous Organization) governance system, to ensure continuous yield generation and enhanced security.
 
-1. The example hook [Counter.sol](src/Counter.sol) demonstrates the `beforeSwap()` and `afterSwap()` hooks
-2. The test template [Counter.t.sol](test/Counter.t.sol) preconfigures the v4 pool manager, test tokens, and test liquidity.
+#### The Problem
 
-<details>
-<summary>Updating to v4-template:latest</summary>
+Traditional investment methods in projects often lead to high risks and potential complete financial loss when projects fail. Common reasons for project failure include:
 
-This template is actively maintained -- you can update the v4 dependencies, scripts, and helpers: 
-```bash
-git remote add template https://github.com/uniswapfoundation/v4-template
-git fetch template
-git merge template/main <BRANCH> --allow-unrelated-histories
-```
+1. **Lack of Product-Market Fit**: Many startups fail because they create products that do not meet market needs, often due to inadequate market research or misjudging demand.
+2. **Insufficient Capital**: Inadequate funding hampers the ability to sustain operations, innovate, or scale effectively, leading to premature failure.
+3. **Poor Management and Planning**: Ineffective project management, unclear goals, and poor communication can derail projects, resulting in inefficient resource management and missed objectives.
+4. **Market and Competitive Dynamics**: Unexpected changes in market conditions and intense competition can negatively impact startups, making it difficult to maintain a competitive edge.
+5. **Technological and Timing Issues**: Launching products at the wrong time or with immature technology can lead to missed opportunities and inadequate adoption.
 
-</details>
+#### The Solution: EarnFlow Protocol
 
----
+EarnFlow mitigates these risks by ensuring continuous income streams and providing robust anti-rug pull mechanisms through a dual-faceted approach:
 
-## Set up
+1. **Investment Flow**: Investors select projects and invest their ETH via the EarnFlowHook. The EarnFlowHook splits the ETH into two parts:
 
-*requires [foundry](https://book.getfoundry.sh)*
+   - **Investment Fund**: A portion of the ETH is sent to a DAO, which manages and monitors the funds before allocating them to the project beneficiary. For testing purposes, this amount is currently sent directly to the beneficiary.
+   - **Reserve Fund**: The remaining ETH is added to a Uniswap V4 pool to generate yield.
 
-```
-forge install
-forge test
-```
+   This dual allocation ensures that part of the investment directly supports the project while the other part generates continuous income for investors.
 
-### Local Development (Anvil)
+2. **EarnFlowHook Mechanics**:
 
-Other than writing unit tests (recommended!), you can only deploy & test hooks on [anvil](https://book.getfoundry.sh/anvil/)
+   - **ETH Split**: The invested ETH is algorithmically split between the Investment Fund and the Reserve Fund.
+   - **Yield Generation**: The Reserve Fund generates yield through LP fees on Uniswap, ensuring a continuous income stream for investors.
+   - **Anti-Rug Pull Feature**: Initial phase selling is disabled to prevent sell pressure and economic vulnerabilities, protecting early investors and ensuring a stable launch period.
 
-```bash
-# start anvil, a local EVM chain
-anvil
+3. **Bonded Tokens and Dividends**:
 
-# in a new terminal
-forge script script/Anvil.s.sol \
-    --rpc-url http://localhost:8545 \
-    --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-    --broadcast
-```
+   - **Bonded Tokens**: Investors receive bonded tokens in exchange for their investment. These tokens are used to create a pool with ETH and represent a stake in the project.
+   - **Dividends**: Bonded tokens entitle investors to dividends from the project's revenue. Dividends are shared with both investors and project owners when the project is successful, aligning incentives and ensuring fair profit distribution.
 
-<details>
-<summary><h3>Testnets</h3></summary>
+4. **Future DAO System**:
 
-NOTE: 11/21/2023, the Goerli deployment is out of sync with the latest v4. **It is recommend to use local testing instead**
+   - **Governance**: The future DAO will oversee fund allocation, project monitoring, and revenue distribution, ensuring transparency and accountability.
+   - **Transparency**: Governance decisions, including revenue distribution to investors, will be based on investor-set percentages or community governance, fostering trust and engagement among stakeholders.
 
-~~For testing on Goerli Testnet the Uniswap Foundation team has deployed a slimmed down version of the V4 contract (due to current contract size limits) on the network.~~
+5. **Bonding Curve**:
+   - **Flexible Curves**: The bonding curve can be exponential, square, 1-1, or more. In the future, this can be replaced with a V3 pool or V4 hook with a single side entry point, providing greater flexibility and efficiency.
 
-~~The relevant addresses for testing on Goerli are the ones below~~
+#### Workflows
 
-```bash
-POOL_MANAGER = 0x0
-POOL_MODIFY_POSITION_TEST = 0x0
-SWAP_ROUTER = 0x0
-```
+##### Buy Flow
 
-Update the following command with your own private key:
+1. **Investor Action**: An investor selects a project and invests ETH via the EarnFlowHook.
+2. **ETH Split**: The EarnFlowHook splits the ETH into the Investment Fund and the Reserve Fund.
+3. **Investment Fund Allocation**: A portion of the ETH is sent to the DAO (currently directly to the beneficiary for testing).
+4. **Reserve Fund Allocation**: The remaining ETH is added to a Uniswap V4 pool to generate yield.
 
-```
-forge script script/00_Counter.s.sol \
---rpc-url https://rpc.ankr.com/eth_goerli \
---private-key [your_private_key_on_goerli_here] \
---broadcast
-```
+##### Sell Flow
 
-### *Deploying your own Tokens For Testing*
+1. **Investor Action**: An investor decides to sell their bonded tokens.
+2. **Token Burn**: The bonded tokens are burned by the EarnFlowHook.
+3. **ETH Payout**: The investor receives ETH from the Reserve Fund based on the current token price.
 
-Because V4 is still in testing mode, most networks don't have liquidity pools live on V4 testnets. We recommend launching your own test tokens and expirementing with them that. We've included in the templace a Mock UNI and Mock USDC contract for easier testing. You can deploy the contracts and when you do you'll have 1 million mock tokens to test with for each contract. See deployment commands below
+##### Payment Flow
 
-```
-forge create script/mocks/mUNI.sol:MockUNI \
---rpc-url [your_rpc_url_here] \
---private-key [your_private_key_on_goerli_here]
-```
+1. **Revenue Generation**: The project generates revenue and sends it to the EarnFlowHook.
+2. **Revenue Split**: The revenue is split between direct income to the beneficiary treasury and dividends for bonded token holders.
+3. **Dividend Distribution**: Bonded token holders receive their share of the dividends, ensuring a continuous income stream.
 
-```
-forge create script/mocks/mUSDC.sol:MockUSDC \
---rpc-url [your_rpc_url_here] \
---private-key [your_private_key_on_goerli_here]
-```
+#### Implementation
 
-</details>
+Our initial EarnFlow implementation supports:
 
----
+- **Flexible Bonding Curves**: Supporting various curve types (exponential, square, 1-1, etc.), which can be replaced with a V3 pool or V4 hook in the future.
+- **Dividend Distributions**: Providing bonded token holders with a share of project revenues.
+- **Anti-Rug Pull Features**: Disabling selling in the initial phase to protect early investors.
 
-<details>
-<summary><h2>Troubleshooting</h2></summary>
+#### Future Plans
 
+##### Financial Features
 
-
-### *Permission Denied*
-
-When installing dependencies with `forge install`, Github may throw a `Permission Denied` error
-
-Typically caused by missing Github SSH keys, and can be resolved by following the steps [here](https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh) 
-
-Or [adding the keys to your ssh-agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent), if you have already uploaded SSH keys
-
-### Hook deployment failures
-
-Hook deployment failures are caused by incorrect flags or incorrect salt mining
-
-1. Verify the flags are in agreement:
-    * `getHookCalls()` returns the correct flags
-    * `flags` provided to `HookMiner.find(...)`
-2. Verify salt mining is correct:
-    * In **forge test**: the *deploye*r for: `new Hook{salt: salt}(...)` and `HookMiner.find(deployer, ...)` are the same. This will be `address(this)`. If using `vm.prank`, the deployer will be the pranking address
-    * In **forge script**: the deployer must be the CREATE2 Proxy: `0x4e59b44847b379578588920cA78FbF26c0B4956C`
-        * If anvil does not have the CREATE2 deployer, your foundry may be out of date. You can update it with `foundryup`
-
-</details>
-
----
-
-Additional resources:
-
-[v4-periphery](https://github.com/uniswap/v4-periphery) contains advanced hook implementations that serve as a great reference
-
-[v4-core](https://github.com/uniswap/v4-core)
-
-[v4-by-example](https://v4-by-example.org)
-
+1. **Hatching**: This is already implemented but a more advanced version could be developed, integrating an oracle to enhance accuracy and responsiveness to market conditions.
+2. **Vesting**: Implementing vesting periods for minted tokens to prevent pump-and-dump schemes. This feature aligns incentives and ensures long-term commitment from investors.
+3. **Taxes**: Adding selling fees to encourage secondary market trading. This mechanism helps stabilize the market and generate additional revenue for the project.
+4. **Governance via Bonded Tokens**: Granting voting power to token holders, giving them a say in project governance and fund allocation. This democratic approach enhances community engagement and decision-making.
