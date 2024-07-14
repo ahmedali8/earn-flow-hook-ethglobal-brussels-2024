@@ -14,6 +14,8 @@ import {BaseTestHooks} from "v4-core/src/test/BaseTestHooks.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
+import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 
 import {BondingCurve} from "../bondingCurve/BondingCurve.sol";
 
@@ -23,8 +25,12 @@ contract EarnFlowHook is BaseHook, BondingCurve {
     using CurrencySettler for Currency;
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
+    using FixedPointMathLib for uint256;
+    using SafeCast for uint256;
 
     IPoolManager immutable manager;
+
+    uint256 public hookFee = 100e18; // 0.01%
 
     constructor(
         IPoolManager _manager,
@@ -63,5 +69,32 @@ contract EarnFlowHook is BaseHook, BondingCurve {
             afterAddLiquidityReturnDelta: false,
             afterRemoveLiquidityReturnDelta: false
         });
+    }
+
+    function afterSwap(
+        address,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        BalanceDelta delta,
+        bytes calldata
+    ) external override returns (bytes4, int128) {
+        // fee will be in the unspecified token of the swap
+        bool isCurrency0Specified = (params.amountSpecified < 0 == params.zeroForOne);
+
+        (Currency currencyUnspecified, int128 amountUnspecified) =
+            (isCurrency0Specified) ? (key.currency1, delta.amount1()) : (key.currency0, delta.amount0());
+
+        // if exactOutput swap, get the absolute output amount
+        if (amountUnspecified < 0) amountUnspecified = -amountUnspecified;
+
+        uint256 feeAmount = uint256(int256(amountUnspecified)) * hookFee / 100000e18;
+
+        manager.take(currencyUnspecified, address(this), feeAmount);
+
+        return (BaseHook.afterSwap.selector, feeAmount.toInt128());
+    }
+
+    function setHookFee(uint256 fee) external onlyOwner {
+        hookFee = fee;
     }
 }

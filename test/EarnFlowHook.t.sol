@@ -15,6 +15,8 @@ import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {TickMath} from "v4-core/src/libraries/TickMath.sol";
+import {FixedPointMathLib} from "solmate/utils/FixedPointMathLib.sol";
 
 import {EarnFlowHook} from "src/hook/EarnFlowHook.sol";
 
@@ -29,6 +31,7 @@ contract EarnFlowHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
+    using FixedPointMathLib for uint256;
 
     EarnFlowHook hook; // aka the bonding curve
     PoolId poolId;
@@ -50,27 +53,29 @@ contract EarnFlowHookTest is Test, Deployers {
     uint256 numTokens = 100_000 ether;
     uint256 tokenRatioPrecision = 1000000;
 
-    function setUp() public {
-        owner = msg.sender;
-        beneficiary = address(0x123);
+    // The two currencies from the pool
+    Currency _currency0 = CurrencyLibrary.NATIVE; // ETH
+    Currency _currency1; // Bonded Token
 
-        vm.startPrank({msgSender: owner});
+    function setUp() public {
+        owner = address(this);
+        beneficiary = address(0x123);
 
         // deploy dividend token
         uint256 dividendTokenInitialBalance = 60_000 ether;
-        dividendToken = new DividendToken({_owner: msg.sender, _name: "DividendToken", _symbol: "DTKN"});
+        dividendToken = new DividendToken({_owner: owner, _name: "DividendToken", _symbol: "DTKN"});
 
         // mint initial balance to owner
         dividendToken.mint(owner, dividendTokenInitialBalance);
 
         // deploy rewards distributor
-        rewardsDistributor = new RewardsDistributor({_owner: msg.sender});
+        rewardsDistributor = new RewardsDistributor({_owner: owner});
 
         // deploy bonded token
         bondedToken = new BondedToken({
             _name: "BondedToken",
             _symbol: "BTKN",
-            _owner: msg.sender,
+            _owner: owner,
             rewardsDistributor_: rewardsDistributor,
             dividendToken_: dividendToken
         });
@@ -82,7 +87,6 @@ contract EarnFlowHookTest is Test, Deployers {
 
         // creates the pool manager, utility routers, and test tokens
         Deployers.deployFreshManagerAndRouters();
-        Deployers.deployMintAndApprove2Currencies();
 
         // Deploy the hook to an address with the correct flags
         address flags = address(
@@ -117,10 +121,59 @@ contract EarnFlowHookTest is Test, Deployers {
 
         // mint some bonded tokens to the owner
         bondedToken.mint(owner, 100_000 ether);
+        bondedToken.mint(address(hook), 100_000 ether);
+        bondedToken.mint(address(this), 100_000 ether);
+        bondedToken.mint(msg.sender, 100_000 ether);
 
         assertEq(address(bondedToken.owner()), owner);
         assertEq(address(bondedToken.minter()), address(hook));
         assertEq(address(rewardsDistributor.owner()), address(bondedToken));
+
+        // Create the pool //
+
+        _currency1 = Currency.wrap(address(bondedToken));
+
+        address[8] memory toApprove = [
+            address(swapRouter),
+            address(swapRouterNoChecks),
+            address(modifyLiquidityRouter),
+            address(modifyLiquidityNoChecks),
+            address(donateRouter),
+            address(takeRouter),
+            address(claimsRouter),
+            address(nestedActionRouter.executor())
+        ];
+
+        for (uint256 i = 0; i < toApprove.length; i++) {
+            bondedToken.approve(toApprove[i], Constants.MAX_UINT256);
+        }
+
+        key = PoolKey({
+            currency0: _currency0,
+            currency1: _currency1,
+            fee: 3000,
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
+        });
+        poolId = key.toId();
+        manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
+
+        // Provide liquidity to the pool //
+
+        // Provide 10e18 worth of liquidity on the range of [-60, 60]
+        BalanceDelta result = modifyLiquidityRouter.modifyLiquidity{value: 200 ether}(
+            key,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: TickMath.minUsableTick(60),
+                tickUpper: TickMath.maxUsableTick(60),
+                liquidityDelta: 100 ether,
+                salt: 0
+            }),
+            ZERO_BYTES
+        );
+
+        assertEq(result.amount0(), -99999999999999999995); // 99.9 ether
+        assertEq(result.amount1(), -99999999999999999995);
 
         vm.stopPrank();
     }
@@ -177,5 +230,43 @@ contract EarnFlowHookTest is Test, Deployers {
 
         assertEq(reserveBalAfter - reserveBalBefore, expectedToReserve);
         assertEq(bondingCurveBalAfter - bondingCurveBalBefore, expectedToReserve);
+
+        /// PROVIDE THE RESERVE AMOUNT AS LIQUIDITY TO THE POOL ///
+
+        BalanceDelta result = modifyLiquidityRouter.modifyLiquidity{value: expectedToReserve}(
+            key,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: TickMath.minUsableTick(60),
+                tickUpper: TickMath.maxUsableTick(60),
+                liquidityDelta: 1 ether,
+                salt: 0
+            }),
+            ZERO_BYTES
+        );
+
+        assertEq(result.amount0(), -1e18);
+        assertEq(result.amount1(), -1e18);
+
+        // hook bal before
+        uint256 hookBalBefore = bondedToken.balanceOf(address(hook));
+
+        // Perform a test swap //
+        bool zeroForOne = true;
+        int256 amountSpecified = -0.5e18; // negative number indicates exact input swap!
+        BalanceDelta swapDelta = Deployers.swapNativeInput({
+            _key: key,
+            zeroForOne: zeroForOne,
+            amountSpecified: amountSpecified,
+            hookData: ZERO_BYTES,
+            msgValue: 0.5 ether
+        });
+        // ------------------- //
+
+        // hook is holding the fee as a balance
+        assertApproxEqAbs(
+            bondedToken.balanceOf(address(hook)),
+            hookBalBefore + 496051665788164, // 4.96e14
+            0.000001e18
+        );
     }
 }
